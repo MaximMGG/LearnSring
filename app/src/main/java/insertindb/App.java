@@ -14,15 +14,14 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public class App {
 
-    private String pathToExmaple = "app/src/main/resources/example.xdxf";
-    private String url = "jdbc:postgresql://localhost:8081/postgres";
+    private static String pathToExmaple = "app/src/main/resources/russian_english_adjectives.csv";
+    private static String pathToExmaple2 = "app/src/main/resources/russian_english_nouns.csv";
+    private String url = "jdbc:postgresql://localhost:5432/english_russian_translation";
     private String username = "postgres";
-    private String password = "17TypeofMG";
+    private String password = "postgres";
 
     private String sqlQuerry;
 
@@ -69,46 +68,90 @@ public class App {
            where en_word = ?
             """;
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException, SQLException {
+        long start = System.currentTimeMillis();
         App app = new App();
-        app.startParsingXML();
-        System.out.println(libRu);
-        System.out.println(libEn);
+        app.startParsing(pathToExmaple);
+        app.startParsing(pathToExmaple2);
+        // app.getMaxLengthRu();
+        // app.getMaxLengthEn();
+        Connection ruConnection = app.getConnection();
+        Connection enConnection = app.getConnection();
+        app.insertInRuDB(ruConnection);
+        app.insertInEnDB(enConnection);
+        long end = System.currentTimeMillis();
+        System.out.println("Work time is : " + (end - start));
     }
 
-    private void startParsingXML() throws IOException {
-        List<String> buffer = new ArrayList<>();
-        buffer = Files.readAllLines(Path.of(pathToExmaple));
-        for (int i = 0; i < buffer.size(); i++) {
-           parsXMLDictionary(buffer.get(i), buffer.get(++i));
-           i++;
+    private void getMaxLengthRu() {
+        int maxLength = 0;
+        String key = "";
+        String value = "";
+        for(Map.Entry<String, String> entry : libRu.entrySet()) {
+            if (entry.getValue() != null) {
+                if (entry.getValue().length() > maxLength) {
+                    maxLength = entry.getValue().length();
+                    key = entry.getKey();
+                    value = entry.getValue();
+                }
+            }
         }
+        System.out.println(maxLength + key + " - " + value);
+    }
+
+    private void getMaxLengthEn() {
+        int maxLength = 0;
+        String key = "";
+        String value = "";
+        for(Map.Entry<String, String> entry : libEn.entrySet()) {
+            if (entry.getValue() != null) {
+                if (entry.getValue().length() > maxLength) {
+                    maxLength = entry.getValue().length();
+                    key = entry.getKey();
+                    value = entry.getValue();
+                }
+            }
+        }
+        System.out.println(maxLength + key + " - " + value);
+    }
+
+    private void insertInRuDB(Connection connection) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(insertRuWord)) {
+            for (Map.Entry<String, String> entry : libRu.entrySet()) {
+                statement.setString(1, entry.getKey());
+                statement.setString(2, entry.getValue());
+                statement.executeUpdate();
+            }
+            connection.close();
+        }
+    }
+    private void insertInEnDB(Connection connection) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(insertEnWord)) {
+            for (Map.Entry<String, String> entry : libEn.entrySet()) {
+                statement.setString(1, entry.getKey());
+                statement.setString(2, entry.getValue());
+                statement.executeUpdate();
+            }
+            connection.close();
+        }
+    }
+
+    private void startParsing(String exmaple) throws IOException {
+        List<String> buffer = new ArrayList<>();
+        buffer = Files.readAllLines(Path.of(exmaple));
+        for (int i = 0; i < buffer.size(); i++) {
+            parseLineAndInputInMap(buffer.get(i));
+        }
+    }
+
+    private void parseLineAndInputInMap(String string) {
+        String[] buf = string.split(",");
+        if (buf[1].startsWith("Adjective")) return;
+        checkInMap(buf);
     }
 
     private Connection getConnection() throws SQLException {
         return DriverManager.getConnection(url, username, password);
-    }
-
-    private PreparedStatement getStatement(Connection connection) throws SQLException {
-        return connection.prepareStatement(sqlQuerry);
-    }
-
-    private void insurtInDB() {
-
-    }
-
-
-    private void parsXMLDictionary(String ru, String en) {
-        String[] translation = new String[2];
-        Matcher mRu = Pattern.compile("&quot;(.+)&quot;").matcher(ru);
-        Matcher mEn = Pattern.compile("<k>(.+)</k>").matcher(en);
-        if (mRu.find()){
-            translation[0] = mRu.group(1);
-        }
-        if (mEn.find()){
-            translation[1] = mEn.group(1);
-        }
-        checkInMap(translation);
     }
 
     private void checkInMap(String[] tr) {
